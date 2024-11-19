@@ -18,20 +18,36 @@
     canvas, video {
       position: absolute;
     }
+    #recordBtn {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      background-color: red;
+      color: white;
+      padding: 10px;
+      border: none;
+      cursor: pointer;
+    }
   </style>
 </head>
 <body>
   <video id="video" autoplay muted playsinline></video>
   <canvas id="output"></canvas>
+  <button id="recordBtn">Start Recording</button>
 
   <script>
     const videoElement = document.getElementById('video');
     const canvasElement = document.getElementById('output');
     const canvasCtx = canvasElement.getContext('2d');
+    const recordBtn = document.getElementById('recordBtn');
+    let isRecording = false;
+    let mediaRecorder;
+    let recordedChunks = [];
 
     const faceMesh = new FaceMesh({
       locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`,
     });
+
     faceMesh.setOptions({
       maxNumFaces: 1,
       minDetectionConfidence: 0.5,
@@ -60,7 +76,7 @@
       canvasCtx.save();
       canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
       canvasCtx.translate(canvasElement.width, 0);
-      canvasCtx.scale(-1, 1);
+      canvasCtx.scale(-1, 1); // Flip horizontally
 
       // Draw the video feed
       canvasCtx.drawImage(videoElement, 0, 0, canvasElement.width, canvasElement.height);
@@ -84,6 +100,39 @@
 
       // Restore the canvas to its original state
       canvasCtx.restore();
+    }
+
+    // Start/Stop recording
+    recordBtn.addEventListener('click', () => {
+      if (isRecording) {
+        mediaRecorder.stop();
+        recordBtn.textContent = "Start Recording";
+        isRecording = false;
+      } else {
+        startRecording();
+        recordBtn.textContent = "Stop Recording";
+        isRecording = true;
+      }
+    });
+
+    function startRecording() {
+      const stream = canvasElement.captureStream(30); // 30 FPS
+      mediaRecorder = new MediaRecorder(stream);
+
+      mediaRecorder.ondataavailable = (e) => {
+        recordedChunks.push(e.data);
+      };
+
+      mediaRecorder.onstop = () => {
+        const blob = new Blob(recordedChunks, { type: 'video/webm' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'recording.webm';
+        a.click();
+      };
+
+      mediaRecorder.start();
     }
   </script>
 </body>
