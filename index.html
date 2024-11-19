@@ -112,13 +112,14 @@
     document.body.appendChild(renderer.domElement);
 
     // Add lighting
-    const light = new THREE.AmbientLight(0x404040);
+    const light = new THREE.AmbientLight(0x404040); // Ambient light to make things visible
     scene.add(light);
 
-    // Set up OrbitControls
+    // Set up OrbitControls for easy scene navigation
     const controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.enableZoom = false; // Disable zoom to keep the model and video at a fixed distance
 
-    // Set up video texture
+    // Set up video texture for webcam feed
     const video = document.createElement('video');
     video.srcObject = null; // Will be set once webcam access is granted
     video.autoplay = true;
@@ -130,25 +131,28 @@
     videoTexture.magFilter = THREE.LinearFilter;
     videoTexture.format = THREE.RGBFormat;
 
-    // Create the video screen mesh
-    const geometry = new THREE.PlaneGeometry(16, 9);
+    // Create the video screen mesh and add it to the scene
+    const geometry = new THREE.PlaneGeometry(16, 9); // Create a rectangular plane for the video
     const material = new THREE.MeshBasicMaterial({ map: videoTexture });
     const mesh = new THREE.Mesh(geometry, material);
     scene.add(mesh);
-    mesh.position.set(0, 0, -5);
+    mesh.position.set(0, 0, -5); // Position the video plane in front of the camera
 
-    camera.position.z = 5;
+    // Set up the camera
+    camera.position.z = 10;
 
     // Load the 3D model (aespa_short_hair_with_bones.glb)
     const loader = new THREE.GLTFLoader();
     loader.load('aespa_short_hair_with_bones.glb', (gltf) => {
       model = gltf.scene;
       scene.add(model);
-      model.position.set(0, 0, -10); // Place model behind the video feed
-      model.scale.set(2, 2, 2); // Scale the model to fit behind the video
+      model.position.set(0, -2, -10); // Position model behind the video
+      model.scale.set(3, 3, 3); // Scale model for visibility
+    }, undefined, (error) => {
+      console.error("Error loading model:", error);
     });
 
-    // Handle camera access
+    // Access the webcam video feed
     navigator.mediaDevices.getUserMedia({ video: true })
       .then(stream => {
         video.srcObject = stream;
@@ -163,7 +167,7 @@
   function animate() {
     requestAnimationFrame(animate);
 
-    // Rotate the model for some dynamic effect
+    // Rotate the model slightly to create a dynamic effect
     if (model) {
       model.rotation.y += 0.01;
     }
@@ -209,7 +213,7 @@
   startRecordingButton.addEventListener('click', startRecording);
   stopRecordingButton.addEventListener('click', stopRecording);
 
-  // Initialize scene when window loads
+  // Initialize the scene when the window loads
   window.onload = init;
 </script>
 
