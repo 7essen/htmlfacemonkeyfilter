@@ -38,18 +38,25 @@
     renderer.setSize(window.innerWidth, window.innerHeight);
     camera.position.set(0, 0, 2);
 
+    // Lighting
     const light = new THREE.AmbientLight(0xffffff, 1); // Ambient light
     scene.add(light);
 
-    // Load 3D Hair Model
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+    directionalLight.position.set(1, 1, 1).normalize();
+    scene.add(directionalLight);
+
+    // Load 3D Hair Model (Replace with your actual GLB model path)
     const loader = new THREE.GLTFLoader();
     let hairModel;
 
     loader.load('aespa_short_hair_with_bones.glb', function (gltf) {
       hairModel = gltf.scene;
-      hairModel.scale.set(0.1, 0.1, 0.1); // Adjust size to fit the head
+      hairModel.scale.set(0.1, 0.1, 0.1); // Adjust size
       hairModel.visible = false; // Hide until landmarks are detected
       scene.add(hairModel);
+    }, undefined, function (error) {
+      console.error('Error loading model:', error);
     });
 
     // Mediapipe Face Mesh Setup
@@ -65,38 +72,55 @@
 
     faceMesh.onResults(onResults);
 
-    const cameraUtils = new Camera(videoElement, {
-      onFrame: async () => {
-        await faceMesh.send({ image: videoElement });
-      },
-      width: 1280,
-      height: 720,
-    });
+    // Request camera access
+    async function startCamera() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "user" }
+        });
+        videoElement.srcObject = stream;
+        videoElement.play();
+      } catch (err) {
+        console.error("Error accessing camera:", err);
+        alert("Unable to access camera. Please allow camera access.");
+      }
+    }
 
-    cameraUtils.start();
+    // Initialize camera and Mediapipe Face Mesh
+    startCamera().then(() => {
+      const cameraUtils = new Camera(videoElement, {
+        onFrame: async () => {
+          await faceMesh.send({ image: videoElement });
+        },
+        width: 1280,
+        height: 720,
+      });
+
+      cameraUtils.start();
+    });
 
     // Face Mesh Results Handler
     function onResults(results) {
       if (!results.multiFaceLandmarks || !hairModel) return;
 
       const landmarks = results.multiFaceLandmarks[0];
-      const forehead = landmarks[10]; // Example: Forehead landmark
-      const noseBridge = landmarks[6]; // Example: Nose bridge for rotation reference
+      const forehead = landmarks[10]; // Forehead landmark
+      const noseBridge = landmarks[6]; // Nose bridge for rotation reference
 
-      // Position the hair model
+      // Position the hair model based on forehead
       hairModel.position.set(
         (forehead.x - 0.5) * 2, // Map x to 3D space
         -(forehead.y - 0.5) * 2, // Map y to 3D space
         -2 // Adjust depth
       );
 
-      // Calculate rotation
+      // Calculate rotation based on the nose bridge and forehead
       const dx = noseBridge.x - forehead.x;
       const dy = noseBridge.y - forehead.y;
       const rotation = Math.atan2(dy, dx);
 
       hairModel.rotation.set(0, 0, rotation);
-      hairModel.visible = true; // Make the model visible when landmarks are detected
+      hairModel.visible = true; // Make model visible when landmarks are detected
     }
 
     // Animation Loop
