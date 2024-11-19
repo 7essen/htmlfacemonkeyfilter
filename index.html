@@ -72,7 +72,7 @@
 
   <div class="input-group">
     <label for="model-url">3D Model URL (GLB file)</label>
-    <input type="text" id="model-url" placeholder="Enter GLB file URL">
+    <input type="text" id="model-url" value="aespa_short_hair_with_bones.glb" placeholder="Enter GLB file URL">
   </div>
 
   <div class="video-container">
@@ -92,7 +92,7 @@
 <!-- Include Three.js and other required scripts -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/OrbitControls.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@react-three/drei@2.4.0/umd/index.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/loaders/GLTFLoader.js"></script>
 
 <script>
   let scene, camera, renderer, model, videoTexture, mediaRecorder, recordedChunks = [];
@@ -139,6 +139,15 @@
 
     camera.position.z = 5;
 
+    // Load the 3D model (aespa_short_hair_with_bones.glb)
+    const loader = new THREE.GLTFLoader();
+    loader.load('aespa_short_hair_with_bones.glb', (gltf) => {
+      model = gltf.scene;
+      scene.add(model);
+      model.position.set(0, 0, -10); // Place model behind the video feed
+      model.scale.set(2, 2, 2); // Scale the model to fit behind the video
+    });
+
     // Handle camera access
     navigator.mediaDevices.getUserMedia({ video: true })
       .then(stream => {
@@ -153,6 +162,12 @@
   // Animation loop
   function animate() {
     requestAnimationFrame(animate);
+
+    // Rotate the model for some dynamic effect
+    if (model) {
+      model.rotation.y += 0.01;
+    }
+
     renderer.render(scene, camera);
   }
 
