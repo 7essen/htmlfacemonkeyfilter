@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Monkey Mask Filter</title>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils"></script>
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      background: #000;
+    }
+    canvas, video {
+      position: absolute;
+    }
+  </style>
+</head>
+<body>
+  <video id="video" autoplay muted playsinline></video>
+  <canvas id="output"></canvas>
+
+  <script>
+    const videoElement = document.getElementById('video');
+    const canvasElement = document.getElementById('output');
+    const canvasCtx = canvasElement.getContext('2d');
+
+    const faceMesh = new FaceMesh({
+      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`,
+    });
+    faceMesh.setOptions({
+      maxNumFaces: 1,
+      minDetectionConfidence: 0.5,
+      minTrackingConfidence: 0.5,
+    });
+
+    faceMesh.onResults(onResults);
+
+    const camera = new Camera(videoElement, {
+      onFrame: async () => {
+        await faceMesh.send({ image: videoElement });
+      },
+      width: 1280,
+      height: 720,
+    });
+    camera.start();
+
+    const mask = new Image();
+    mask.src = 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTl23W-lXgowx1TYak9zYj5AN8vOChISWjS9w&usqp=CAU'; // رابط الماسك
+
+    function onResults(results) {
+      canvasElement.width = videoElement.videoWidth;
+      canvasElement.height = videoElement.videoHeight;
+
+      canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+
+      canvasCtx.drawImage(videoElement, 0, 0, canvasElement.width, canvasElement.height);
+
+      if (results.multiFaceLandmarks) {
+        for (const landmarks of results.multiFaceLandmarks) {
+          const nose = landmarks[1]; // الأنف
+          const leftEye = landmarks[33]; // العين اليسرى
+          const rightEye = landmarks[263]; // العين اليمنى
+
+          const maskWidth = Math.abs(leftEye.x - rightEye.x) * canvasElement.width * 2;
+          const maskHeight = maskWidth;
+          const maskX = (nose.x * canvasElement.width) - maskWidth / 2;
+          const maskY = (nose.y * canvasElement.height) - maskHeight / 2;
+
+          canvasCtx.drawImage(mask, maskX, maskY, maskWidth, maskHeight);
+        }
+      }
+    }
+  </script>
+</body>
+</html>
