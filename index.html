@@ -4,47 +4,140 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Monkey Mask Filter</title>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils"></script>
   <style>
     body {
       margin: 0;
-      overflow: hidden;
+      height: 100vh;
       display: flex;
       justify-content: center;
       align-items: center;
-      background: #000;
-    }
-    canvas, video {
-      position: absolute;
-    }
-    #recordBtn {
-      position: absolute;
-      top: 20px;
-      left: 20px;
-      background-color: red;
+      background-color: #1F2937;
       color: white;
-      padding: 10px;
+    }
+    .card {
+      width: 100%;
+      max-width: 600px;
+      background-color: #2D3748;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .card-header {
+      padding: 16px;
+      background-color: #4A5568;
+    }
+    .card-header h2 {
+      font-size: 24px;
+      font-weight: bold;
+    }
+    .card-header p {
+      font-size: 14px;
+    }
+    .card-content {
+      padding: 16px;
+      position: relative;
+    }
+    .video-container {
+      position: relative;
+      aspect-ratio: 16/9;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    video, canvas {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      position: absolute;
+      top: 0;
+      left: 0;
+    }
+    .loading, .camera-error {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      background: rgba(0, 0, 0, 0.5);
+    }
+    .camera-error {
+      background: rgba(0, 0, 0, 0.75);
+      flex-direction: column;
+      align-items: center;
+    }
+    .button {
+      display: flex;
+      align-items: center;
+      padding: 8px 16px;
+      background-color: #3182CE;
+      color: white;
       border: none;
+      border-radius: 8px;
       cursor: pointer;
+    }
+    .button:disabled {
+      background-color: #4A5568;
+      cursor: not-allowed;
+    }
+    .button svg {
+      margin-right: 8px;
     }
   </style>
 </head>
 <body>
-  <video id="video" autoplay muted playsinline></video>
-  <canvas id="output"></canvas>
-  <button id="recordBtn">Start Recording</button>
+
+  <div class="card">
+    <div class="card-header">
+      <h2>Monkey Mask Filter</h2>
+      <p>Apply a fun monkey mask to your face and record videos!</p>
+    </div>
+    <div class="card-content">
+      <div class="video-container">
+        <video id="video" autoplay playsinline muted></video>
+        <canvas id="canvas"></canvas>
+        <div id="loading" class="loading">
+          <svg xmlns="http://www.w3.org/2000/svg" class="animate-spin w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" class="opacity-25"></circle>
+            <path fill="currentColor" d="M4 12a8 8 0 0116 0" class="opacity-75"></path>
+          </svg>
+        </div>
+        <div id="camera-error" class="camera-error" style="display: none;">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-16 h-16 mb-4 text-red-500" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 10l4 4m0 0l-4 4m4-4H6"></path>
+          </svg>
+          <p class="text-center text-red-500">Camera access denied. Please check your permissions.</p>
+        </div>
+      </div>
+
+      <div style="text-align: center;">
+        <button id="record-button" class="button" disabled>
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+          </svg>
+          Start Recording
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh"></script>
 
   <script>
-    const videoElement = document.getElementById('video');
-    const canvasElement = document.getElementById('output');
-    const canvasCtx = canvasElement.getContext('2d');
-    const recordBtn = document.getElementById('recordBtn');
     let isRecording = false;
-    let mediaRecorder;
+    let isLoading = true;
+    let cameraError = false;
+    let mediaRecorder = null;
     let recordedChunks = [];
 
-    const faceMesh = new FaceMesh({
+    const videoElement = document.getElementById('video');
+    const canvasElement = document.getElementById('canvas');
+    const loadingElement = document.getElementById('loading');
+    const cameraErrorElement = document.getElementById('camera-error');
+    const recordButton = document.getElementById('record-button');
+
+    const faceMesh = new FaceMesh.FaceMesh({
       locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`,
     });
 
@@ -54,7 +147,41 @@
       minTrackingConfidence: 0.5,
     });
 
-    faceMesh.onResults(onResults);
+    const mask = new Image();
+    mask.src = 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTl23W-lXgowx1TYak9zYj5AN8vOChISWjS9w&usqp=CAU';
+    mask.onload = () => {
+      isLoading = false;
+      loadingElement.style.display = 'none';
+    };
+
+    faceMesh.onResults((results) => {
+      const canvasCtx = canvasElement.getContext('2d');
+      if (!canvasCtx) return;
+
+      canvasElement.width = videoElement.videoWidth;
+      canvasElement.height = videoElement.videoHeight;
+
+      canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+      canvasCtx.drawImage(videoElement, 0, 0, canvasElement.width, canvasElement.height);
+
+      if (results.multiFaceLandmarks) {
+        for (const landmarks of results.multiFaceLandmarks) {
+          const nose = landmarks[1];
+          const leftEye = landmarks[33];
+          const rightEye = landmarks[263];
+
+          const eyeDistance = Math.sqrt(
+            Math.pow(leftEye.x - rightEye.x, 2) + Math.pow(leftEye.y - rightEye.y, 2)
+          );
+          const maskWidth = eyeDistance * canvasElement.width * 2.5;
+          const maskHeight = maskWidth * (mask.height / mask.width);
+          const maskX = nose.x * canvasElement.width - maskWidth / 2;
+          const maskY = nose.y * canvasElement.height - maskHeight / 2;
+
+          canvasCtx.drawImage(mask, maskX, maskY, maskWidth, maskHeight);
+        }
+      }
+    });
 
     const camera = new Camera(videoElement, {
       onFrame: async () => {
@@ -63,77 +190,58 @@
       width: 1280,
       height: 720,
     });
-    camera.start();
 
-    const mask = new Image();
-    mask.src = 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTl23W-lXgowx1TYak9zYj5AN8vOChISWjS9w&usqp=CAU'; // Mask image URL
+    camera.start().catch((error) => {
+      console.error('Error starting camera:', error);
+      cameraError = true;
+      cameraErrorElement.style.display = 'flex';
+    });
 
-    function onResults(results) {
-      canvasElement.width = videoElement.videoWidth;
-      canvasElement.height = videoElement.videoHeight;
-
-      // Clear and flip the canvas horizontally
-      canvasCtx.save();
-      canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-      canvasCtx.translate(canvasElement.width, 0);
-      canvasCtx.scale(-1, 1); // Flip horizontally
-
-      // Draw the video feed
-      canvasCtx.drawImage(videoElement, 0, 0, canvasElement.width, canvasElement.height);
-
-      if (results.multiFaceLandmarks) {
-        for (const landmarks of results.multiFaceLandmarks) {
-          const nose = landmarks[1]; // Nose
-          const leftEye = landmarks[33]; // Left eye
-          const rightEye = landmarks[263]; // Right eye
-
-          // Calculate mask dimensions and position
-          const maskWidth = Math.abs(leftEye.x - rightEye.x) * canvasElement.width * 2;
-          const maskHeight = maskWidth;
-          const maskX = (1 - nose.x) * canvasElement.width - maskWidth / 2;
-          const maskY = nose.y * canvasElement.height - maskHeight / 2;
-
-          // Draw the mask
-          canvasCtx.drawImage(mask, maskX, maskY, maskWidth, maskHeight);
-        }
-      }
-
-      // Restore the canvas to its original state
-      canvasCtx.restore();
-    }
-
-    // Start/Stop recording
-    recordBtn.addEventListener('click', () => {
+    recordButton.addEventListener('click', () => {
       if (isRecording) {
         mediaRecorder.stop();
-        recordBtn.textContent = "Start Recording";
         isRecording = false;
+        recordButton.innerHTML = `
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+          </svg>
+          Start Recording
+        `;
       } else {
         startRecording();
-        recordBtn.textContent = "Stop Recording";
         isRecording = true;
+        recordButton.innerHTML = `
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+          </svg>
+          Stop Recording
+        `;
       }
     });
 
     function startRecording() {
-      const stream = canvasElement.captureStream(30); // 30 FPS
+      const stream = canvasElement.captureStream(30);
       mediaRecorder = new MediaRecorder(stream);
 
       mediaRecorder.ondataavailable = (e) => {
-        recordedChunks.push(e.data);
+        if (e.data.size > 0) {
+          recordedChunks.push(e.data);
+        }
       };
 
       mediaRecorder.onstop = () => {
         const blob = new Blob(recordedChunks, { type: 'video/webm' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'recording.webm';
-        a.click();
+        const videoURL = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = videoURL;
+        link.download = 'monkey_mask_video.webm';
+        link.click();
+        recordedChunks = [];
       };
 
       mediaRecorder.start();
     }
   </script>
+
 </body>
 </html>
