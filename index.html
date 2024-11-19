@@ -45,7 +45,7 @@
     const loader = new THREE.GLTFLoader();
     let hairModel;
 
-    loader.load('path/to/your/hair_model.glb', function (gltf) {
+    loader.load('aespa_short_hair_with_bones.glb', function (gltf) {
       hairModel = gltf.scene;
       hairModel.scale.set(0.1, 0.1, 0.1); // Adjust size to fit the head
       hairModel.visible = false; // Hide until landmarks are detected
