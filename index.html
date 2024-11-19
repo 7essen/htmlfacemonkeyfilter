@@ -1,134 +1,150 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>3D Hair Filter</title>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.152.2/examples/js/loaders/GLTFLoader.js"></script>
-  <style>
-    body {
-      margin: 0;
-      overflow: hidden;
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Face Filter Demo</title>
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+            "@mediapipe/face_mesh": "https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"
+        }
     }
-    video {
-      display: none;
-    }
-    canvas {
-      display: block;
-    }
-  </style>
+    </script>
+    <style>
+        body { margin: 0; }
+        canvas { display: block; }
+        #video {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        #canvas3d {
+            position: fixed;
+            top: 0;
+            left: 0;
+            pointer-events: none;
+        }
+    </style>
 </head>
 <body>
-  <video id="video" autoplay muted playsinline></video>
-  <canvas id="threeCanvas"></canvas>
+    <video id="video" playsinline></video>
+    <canvas id="canvas3d"></canvas>
 
-  <script>
-    // Video and Canvas Elements
-    const videoElement = document.getElementById('video');
-    const canvasElement = document.getElementById('threeCanvas');
+    <script type="module">
+        import * as THREE from 'three';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+        import { FaceMesh } from '@mediapipe/face_mesh';
 
-    // Three.js Scene, Camera, and Renderer
-    const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-    const renderer = new THREE.WebGLRenderer({ canvas: canvasElement, alpha: true });
-
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    camera.position.set(0, 0, 2);
-
-    // Lighting
-    const light = new THREE.AmbientLight(0xffffff, 1); // Ambient light
-    scene.add(light);
-
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
-    directionalLight.position.set(1, 1, 1).normalize();
-    scene.add(directionalLight);
-
-    // Load 3D Hair Model (Replace with your actual GLB model path)
-    const loader = new THREE.GLTFLoader();
-    let hairModel;
-
-    loader.load('aespa_short_hair_with_bones.glb', function (gltf) {
-      hairModel = gltf.scene;
-      hairModel.scale.set(0.1, 0.1, 0.1); // Adjust size
-      hairModel.visible = false; // Hide until landmarks are detected
-      scene.add(hairModel);
-    }, undefined, function (error) {
-      console.error('Error loading model:', error);
-    });
-
-    // Mediapipe Face Mesh Setup
-    const faceMesh = new FaceMesh({
-      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`,
-    });
-
-    faceMesh.setOptions({
-      maxNumFaces: 1,
-      minDetectionConfidence: 0.5,
-      minTrackingConfidence: 0.5,
-    });
-
-    faceMesh.onResults(onResults);
-
-    // Request camera access
-    async function startCamera() {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "user" }
+        // Set up Three.js scene
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({
+            canvas: document.getElementById('canvas3d'),
+            alpha: true
         });
-        videoElement.srcObject = stream;
-        videoElement.play();
-      } catch (err) {
-        console.error("Error accessing camera:", err);
-        alert("Unable to access camera. Please allow camera access.");
-      }
-    }
+        renderer.setSize(window.innerWidth, window.innerHeight);
 
-    // Initialize camera and Mediapipe Face Mesh
-    startCamera().then(() => {
-      const cameraUtils = new Camera(videoElement, {
-        onFrame: async () => {
-          await faceMesh.send({ image: videoElement });
-        },
-        width: 1280,
-        height: 720,
-      });
+        // Add lighting
+        const light = new THREE.DirectionalLight(0xffffff, 1);
+        light.position.set(0, 1, 1);
+        scene.add(light);
+        scene.add(new THREE.AmbientLight(0xffffff, 0.5));
 
-      cameraUtils.start();
-    });
+        // Load 3D model
+        const loader = new GLTFLoader();
+        let model;
+        loader.load('aespa_short_hair_with_bones.glb', (gltf) => {
+            model = gltf.scene;
+            scene.add(model);
+            model.scale.set(0.1, 0.1, 0.1);
+        });
 
-    // Face Mesh Results Handler
-    function onResults(results) {
-      if (!results.multiFaceLandmarks || !hairModel) return;
+        // Set up face tracking
+        const faceMesh = new FaceMesh({
+            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
+        });
 
-      const landmarks = results.multiFaceLandmarks[0];
-      const forehead = landmarks[10]; // Forehead landmark
-      const noseBridge = landmarks[6]; // Nose bridge for rotation reference
+        faceMesh.setOptions({
+            maxNumFaces: 1,
+            refineLandmarks: true,
+            minDetectionConfidence: 0.5,
+            minTrackingConfidence: 0.5
+        });
 
-      // Position the hair model based on forehead
-      hairModel.position.set(
-        (forehead.x - 0.5) * 2, // Map x to 3D space
-        -(forehead.y - 0.5) * 2, // Map y to 3D space
-        -2 // Adjust depth
-      );
+        // Handle webcam
+        const video = document.getElementById('video');
+        async function setupCamera() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                video.srcObject = stream;
+                return new Promise((resolve) => {
+                    video.onloadedmetadata = () => {
+                        video.play();
+                        resolve(video);
+                    };
+                });
+            } catch (error) {
+                console.error('Error accessing the camera:', error);
+                alert('Failed to access the camera. Please ensure you have given permission and are using a supported browser.');
+            }
+        }
 
-      // Calculate rotation based on the nose bridge and forehead
-      const dx = noseBridge.x - forehead.x;
-      const dy = noseBridge.y - forehead.y;
-      const rotation = Math.atan2(dy, dx);
+        // Process results
+        faceMesh.onResults((results) => {
+            if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
+                const landmarks = results.multiFaceLandmarks[0];
+                
+                if (model) {
+                    // Position the model based on nose position (landmark 1)
+                    const nose = landmarks[1];
+                    model.position.set(
+                        (nose.x - 0.5) * 2,
+                        -(nose.y - 0.5) * 2,
+                        -nose.z
+                    );
 
-      hairModel.rotation.set(0, 0, rotation);
-      hairModel.visible = true; // Make model visible when landmarks are detected
-    }
+                    // Update model rotation based on face orientation
+                    const forehead = landmarks[10];
+                    const chin = landmarks[152];
+                    const rotation = Math.atan2(forehead.y - chin.y, forehead.x - chin.x);
+                    model.rotation.z = rotation;
+                }
+            }
+        });
 
-    // Animation Loop
-    function animate() {
-      requestAnimationFrame(animate);
-      renderer.render(scene, camera);
-    }
-    animate();
-  </script>
+        // Start face detection
+        const startDetection = async () => {
+            try {
+                await setupCamera();
+                await faceMesh.initialize();
+                
+                const tick = () => {
+                    faceMesh.send({ image: video });
+                    renderer.render(scene, camera);
+                    requestAnimationFrame(tick);
+                };
+                
+                tick();
+            } catch (error) {
+                console.error('Error starting detection:', error);
+                alert('An error occurred while starting the face detection. Please refresh the page and try again.');
+            }
+        };
+
+        startDetection();
+
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
 </body>
 </html>
