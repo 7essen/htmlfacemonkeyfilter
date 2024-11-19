@@ -1,150 +1,202 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Face Filter Demo</title>
-    <script type="importmap">
-    {
-        "imports": {
-            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
-            "@mediapipe/face_mesh": "https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"
-        }
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Selfie Video Filter</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #f7fafc;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      margin: 0;
     }
-    </script>
-    <style>
-        body { margin: 0; }
-        canvas { display: block; }
-        #video {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-        }
-        #canvas3d {
-            position: fixed;
-            top: 0;
-            left: 0;
-            pointer-events: none;
-        }
-    </style>
+    .container {
+      background-color: #fff;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+      max-width: 600px;
+      width: 100%;
+    }
+    h1 {
+      font-size: 24px;
+      font-weight: bold;
+      margin-bottom: 20px;
+    }
+    .input-group {
+      margin-bottom: 20px;
+    }
+    input {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+    }
+    button {
+      padding: 10px 20px;
+      border: none;
+      border-radius: 4px;
+      background-color: #007bff;
+      color: white;
+      cursor: pointer;
+    }
+    button:disabled {
+      background-color: #6c757d;
+      cursor: not-allowed;
+    }
+    .video-container {
+      position: relative;
+      width: 100%;
+      height: 0;
+      padding-top: 56.25%; /* 16:9 Aspect Ratio */
+      background: #000;
+      margin-bottom: 20px;
+    }
+    canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+    }
+  </style>
 </head>
 <body>
-    <video id="video" playsinline></video>
-    <canvas id="canvas3d"></canvas>
 
-    <script type="module">
-        import * as THREE from 'three';
-        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-        import { FaceMesh } from '@mediapipe/face_mesh';
+<div class="container">
+  <h1>Selfie Video Filter</h1>
 
-        // Set up Three.js scene
-        const scene = new THREE.Scene();
-        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-        const renderer = new THREE.WebGLRenderer({
-            canvas: document.getElementById('canvas3d'),
-            alpha: true
-        });
-        renderer.setSize(window.innerWidth, window.innerHeight);
+  <div class="input-group">
+    <label for="model-url">3D Model URL (GLB file)</label>
+    <input type="text" id="model-url" placeholder="Enter GLB file URL">
+  </div>
 
-        // Add lighting
-        const light = new THREE.DirectionalLight(0xffffff, 1);
-        light.position.set(0, 1, 1);
-        scene.add(light);
-        scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+  <div class="video-container">
+    <canvas id="canvas"></canvas>
+  </div>
 
-        // Load 3D model
-        const loader = new GLTFLoader();
-        let model;
-        loader.load('aespa_short_hair_with_bones.glb', (gltf) => {
-            model = gltf.scene;
-            scene.add(model);
-            model.scale.set(0.1, 0.1, 0.1);
-        });
+  <button id="start-recording">Start Recording</button>
+  <button id="stop-recording" disabled>Stop Recording</button>
 
-        // Set up face tracking
-        const faceMesh = new FaceMesh({
-            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
-        });
+  <br><br>
 
-        faceMesh.setOptions({
-            maxNumFaces: 1,
-            refineLandmarks: true,
-            minDetectionConfidence: 0.5,
-            minTrackingConfidence: 0.5
-        });
+  <a id="download-video" href="#" style="display: none;">
+    <button>Download Video</button>
+  </a>
+</div>
 
-        // Handle webcam
-        const video = document.getElementById('video');
-        async function setupCamera() {
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-                video.srcObject = stream;
-                return new Promise((resolve) => {
-                    video.onloadedmetadata = () => {
-                        video.play();
-                        resolve(video);
-                    };
-                });
-            } catch (error) {
-                console.error('Error accessing the camera:', error);
-                alert('Failed to access the camera. Please ensure you have given permission and are using a supported browser.');
-            }
-        }
+<!-- Include Three.js and other required scripts -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/OrbitControls.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@react-three/drei@2.4.0/umd/index.js"></script>
 
-        // Process results
-        faceMesh.onResults((results) => {
-            if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
-                const landmarks = results.multiFaceLandmarks[0];
-                
-                if (model) {
-                    // Position the model based on nose position (landmark 1)
-                    const nose = landmarks[1];
-                    model.position.set(
-                        (nose.x - 0.5) * 2,
-                        -(nose.y - 0.5) * 2,
-                        -nose.z
-                    );
+<script>
+  let scene, camera, renderer, model, videoTexture, mediaRecorder, recordedChunks = [];
+  let isRecording = false;
+  const canvas = document.getElementById('canvas');
+  const startRecordingButton = document.getElementById('start-recording');
+  const stopRecordingButton = document.getElementById('stop-recording');
+  const downloadLink = document.getElementById('download-video');
+  const modelUrlInput = document.getElementById('model-url');
 
-                    // Update model rotation based on face orientation
-                    const forehead = landmarks[10];
-                    const chin = landmarks[152];
-                    const rotation = Math.atan2(forehead.y - chin.y, forehead.x - chin.x);
-                    model.rotation.z = rotation;
-                }
-            }
-        });
+  // Initialize Three.js scene
+  function init() {
+    scene = new THREE.Scene();
+    camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    renderer = new THREE.WebGLRenderer({ canvas });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
 
-        // Start face detection
-        const startDetection = async () => {
-            try {
-                await setupCamera();
-                await faceMesh.initialize();
-                
-                const tick = () => {
-                    faceMesh.send({ image: video });
-                    renderer.render(scene, camera);
-                    requestAnimationFrame(tick);
-                };
-                
-                tick();
-            } catch (error) {
-                console.error('Error starting detection:', error);
-                alert('An error occurred while starting the face detection. Please refresh the page and try again.');
-            }
-        };
+    // Add lighting
+    const light = new THREE.AmbientLight(0x404040);
+    scene.add(light);
 
-        startDetection();
+    // Set up OrbitControls
+    const controls = new THREE.OrbitControls(camera, renderer.domElement);
 
-        // Handle window resize
-        window.addEventListener('resize', () => {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
-        });
-    </script>
+    // Set up video texture
+    const video = document.createElement('video');
+    video.srcObject = null; // Will be set once webcam access is granted
+    video.autoplay = true;
+    video.loop = true;
+    video.muted = true;
+
+    videoTexture = new THREE.VideoTexture(video);
+    videoTexture.minFilter = THREE.LinearFilter;
+    videoTexture.magFilter = THREE.LinearFilter;
+    videoTexture.format = THREE.RGBFormat;
+
+    // Create the video screen mesh
+    const geometry = new THREE.PlaneGeometry(16, 9);
+    const material = new THREE.MeshBasicMaterial({ map: videoTexture });
+    const mesh = new THREE.Mesh(geometry, material);
+    scene.add(mesh);
+    mesh.position.set(0, 0, -5);
+
+    camera.position.z = 5;
+
+    // Handle camera access
+    navigator.mediaDevices.getUserMedia({ video: true })
+      .then(stream => {
+        video.srcObject = stream;
+        video.play();
+      })
+      .catch(err => console.error("Error accessing the camera: ", err));
+
+    animate();
+  }
+
+  // Animation loop
+  function animate() {
+    requestAnimationFrame(animate);
+    renderer.render(scene, camera);
+  }
+
+  // Start recording the canvas stream
+  function startRecording() {
+    const stream = canvas.captureStream(30); // 30 FPS
+    mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
+
+    mediaRecorder.ondataavailable = (event) => {
+      if (event.data.size > 0) {
+        recordedChunks.push(event.data);
+      }
+    };
+
+    mediaRecorder.onstop = () => {
+      const blob = new Blob(recordedChunks, { type: 'video/webm' });
+      const url = URL.createObjectURL(blob);
+      downloadLink.href = url;
+      downloadLink.style.display = 'block';
+    };
+
+    mediaRecorder.start();
+    isRecording = true;
+    startRecordingButton.disabled = true;
+    stopRecordingButton.disabled = false;
+  }
+
+  // Stop recording
+  function stopRecording() {
+    if (mediaRecorder) {
+      mediaRecorder.stop();
+    }
+    isRecording = false;
+    startRecordingButton.disabled = false;
+    stopRecordingButton.disabled = true;
+  }
+
+  // Event listeners for buttons
+  startRecordingButton.addEventListener('click', startRecording);
+  stopRecordingButton.addEventListener('click', stopRecording);
+
+  // Initialize scene when window loads
+  window.onload = init;
+</script>
+
 </body>
 </html>
