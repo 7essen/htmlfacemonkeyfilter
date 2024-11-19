@@ -3,35 +3,60 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Monkey Mask Filter</title>
+  <title>3D Hair Filter</title>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.152.2/examples/js/loaders/GLTFLoader.js"></script>
   <style>
     body {
       margin: 0;
       overflow: hidden;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      background: #000;
     }
-    canvas, video {
-      position: absolute;
+    video {
+      display: none;
+    }
+    canvas {
+      display: block;
     }
   </style>
 </head>
 <body>
   <video id="video" autoplay muted playsinline></video>
-  <canvas id="output"></canvas>
+  <canvas id="threeCanvas"></canvas>
 
   <script>
+    // Video and Canvas Elements
     const videoElement = document.getElementById('video');
-    const canvasElement = document.getElementById('output');
-    const canvasCtx = canvasElement.getContext('2d');
+    const canvasElement = document.getElementById('threeCanvas');
 
+    // Three.js Scene, Camera, and Renderer
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer({ canvas: canvasElement, alpha: true });
+
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    camera.position.set(0, 0, 2);
+
+    const light = new THREE.AmbientLight(0xffffff, 1); // Ambient light
+    scene.add(light);
+
+    // Load 3D Hair Model
+    const loader = new THREE.GLTFLoader();
+    let hairModel;
+
+    loader.load('path/to/your/hair_model.glb', function (gltf) {
+      hairModel = gltf.scene;
+      hairModel.scale.set(0.1, 0.1, 0.1); // Adjust size to fit the head
+      hairModel.visible = false; // Hide until landmarks are detected
+      scene.add(hairModel);
+    });
+
+    // Mediapipe Face Mesh Setup
     const faceMesh = new FaceMesh({
       locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`,
     });
+
     faceMesh.setOptions({
       maxNumFaces: 1,
       minDetectionConfidence: 0.5,
@@ -40,41 +65,46 @@
 
     faceMesh.onResults(onResults);
 
-    const camera = new Camera(videoElement, {
+    const cameraUtils = new Camera(videoElement, {
       onFrame: async () => {
         await faceMesh.send({ image: videoElement });
       },
       width: 1280,
       height: 720,
     });
-    camera.start();
 
-    const mask = new Image();
-    mask.src = 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTl23W-lXgowx1TYak9zYj5AN8vOChISWjS9w&usqp=CAU'; // رابط الماسك
+    cameraUtils.start();
 
+    // Face Mesh Results Handler
     function onResults(results) {
-      canvasElement.width = videoElement.videoWidth;
-      canvasElement.height = videoElement.videoHeight;
+      if (!results.multiFaceLandmarks || !hairModel) return;
 
-      canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+      const landmarks = results.multiFaceLandmarks[0];
+      const forehead = landmarks[10]; // Example: Forehead landmark
+      const noseBridge = landmarks[6]; // Example: Nose bridge for rotation reference
 
-      canvasCtx.drawImage(videoElement, 0, 0, canvasElement.width, canvasElement.height);
+      // Position the hair model
+      hairModel.position.set(
+        (forehead.x - 0.5) * 2, // Map x to 3D space
+        -(forehead.y - 0.5) * 2, // Map y to 3D space
+        -2 // Adjust depth
+      );
 
-      if (results.multiFaceLandmarks) {
-        for (const landmarks of results.multiFaceLandmarks) {
-          const nose = landmarks[1]; // الأنف
-          const leftEye = landmarks[33]; // العين اليسرى
-          const rightEye = landmarks[263]; // العين اليمنى
+      // Calculate rotation
+      const dx = noseBridge.x - forehead.x;
+      const dy = noseBridge.y - forehead.y;
+      const rotation = Math.atan2(dy, dx);
 
-          const maskWidth = Math.abs(leftEye.x - rightEye.x) * canvasElement.width * 2;
-          const maskHeight = maskWidth;
-          const maskX = (nose.x * canvasElement.width) - maskWidth / 2;
-          const maskY = (nose.y * canvasElement.height) - maskHeight / 2;
-
-          canvasCtx.drawImage(mask, maskX, maskY, maskWidth, maskHeight);
-        }
-      }
+      hairModel.rotation.set(0, 0, rotation);
+      hairModel.visible = true; // Make the model visible when landmarks are detected
     }
+
+    // Animation Loop
+    function animate() {
+      requestAnimationFrame(animate);
+      renderer.render(scene, camera);
+    }
+    animate();
   </script>
 </body>
 </html>
