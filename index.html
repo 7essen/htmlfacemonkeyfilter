@@ -3,219 +3,88 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Selfie Video Filter</title>
+  <title>Monkey Mask Filter</title>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils"></script>
   <style>
     body {
-      font-family: Arial, sans-serif;
-      background-color: #f7fafc;
+      margin: 0;
+      overflow: hidden;
       display: flex;
       justify-content: center;
       align-items: center;
-      min-height: 100vh;
-      margin: 0;
-    }
-    .container {
-      background-color: #fff;
-      padding: 20px;
-      border-radius: 8px;
-      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-      max-width: 600px;
-      width: 100%;
-    }
-    h1 {
-      font-size: 24px;
-      font-weight: bold;
-      margin-bottom: 20px;
-    }
-    .input-group {
-      margin-bottom: 20px;
-    }
-    input {
-      width: 100%;
-      padding: 10px;
-      border: 1px solid #ccc;
-      border-radius: 4px;
-    }
-    button {
-      padding: 10px 20px;
-      border: none;
-      border-radius: 4px;
-      background-color: #007bff;
-      color: white;
-      cursor: pointer;
-    }
-    button:disabled {
-      background-color: #6c757d;
-      cursor: not-allowed;
-    }
-    .video-container {
-      position: relative;
-      width: 100%;
-      height: 0;
-      padding-top: 56.25%; /* 16:9 Aspect Ratio */
       background: #000;
-      margin-bottom: 20px;
     }
-    canvas {
+    canvas, video {
       position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
     }
   </style>
 </head>
 <body>
+  <video id="video" autoplay muted playsinline></video>
+  <canvas id="output"></canvas>
 
-<div class="container">
-  <h1>Selfie Video Filter</h1>
+  <script>
+    const videoElement = document.getElementById('video');
+    const canvasElement = document.getElementById('output');
+    const canvasCtx = canvasElement.getContext('2d');
 
-  <div class="input-group">
-    <label for="model-url">3D Model URL (GLB file)</label>
-    <input type="text" id="model-url" value="aespa_short_hair_with_bones.glb" placeholder="Enter GLB file URL">
-  </div>
-
-  <div class="video-container">
-    <canvas id="canvas"></canvas>
-  </div>
-
-  <button id="start-recording">Start Recording</button>
-  <button id="stop-recording" disabled>Stop Recording</button>
-
-  <br><br>
-
-  <a id="download-video" href="#" style="display: none;">
-    <button>Download Video</button>
-  </a>
-</div>
-
-<!-- Include Three.js and other required scripts -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/OrbitControls.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/loaders/GLTFLoader.js"></script>
-
-<script>
-  let scene, camera, renderer, model, videoTexture, mediaRecorder, recordedChunks = [];
-  let isRecording = false;
-  const canvas = document.getElementById('canvas');
-  const startRecordingButton = document.getElementById('start-recording');
-  const stopRecordingButton = document.getElementById('stop-recording');
-  const downloadLink = document.getElementById('download-video');
-  const modelUrlInput = document.getElementById('model-url');
-
-  // Initialize Three.js scene
-  function init() {
-    scene = new THREE.Scene();
-    camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-    renderer = new THREE.WebGLRenderer({ canvas });
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    document.body.appendChild(renderer.domElement);
-
-    // Add lighting
-    const light = new THREE.AmbientLight(0x404040); // Ambient light to make things visible
-    scene.add(light);
-
-    // Set up OrbitControls for easy scene navigation
-    const controls = new THREE.OrbitControls(camera, renderer.domElement);
-    controls.enableZoom = false; // Disable zoom to keep the model and video at a fixed distance
-
-    // Set up video texture for webcam feed
-    const video = document.createElement('video');
-    video.srcObject = null; // Will be set once webcam access is granted
-    video.autoplay = true;
-    video.loop = true;
-    video.muted = true;
-
-    videoTexture = new THREE.VideoTexture(video);
-    videoTexture.minFilter = THREE.LinearFilter;
-    videoTexture.magFilter = THREE.LinearFilter;
-    videoTexture.format = THREE.RGBFormat;
-
-    // Create the video screen mesh and add it to the scene
-    const geometry = new THREE.PlaneGeometry(16, 9); // Create a rectangular plane for the video
-    const material = new THREE.MeshBasicMaterial({ map: videoTexture });
-    const mesh = new THREE.Mesh(geometry, material);
-    scene.add(mesh);
-    mesh.position.set(0, 0, -5); // Position the video plane in front of the camera
-
-    // Set up the camera
-    camera.position.z = 10;
-
-    // Load the 3D model (aespa_short_hair_with_bones.glb)
-    const loader = new THREE.GLTFLoader();
-    loader.load('aespa_short_hair_with_bones.glb', (gltf) => {
-      model = gltf.scene;
-      scene.add(model);
-      model.position.set(0, -2, -10); // Position model behind the video
-      model.scale.set(3, 3, 3); // Scale model for visibility
-    }, undefined, (error) => {
-      console.error("Error loading model:", error);
+    const faceMesh = new FaceMesh({
+      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`,
+    });
+    faceMesh.setOptions({
+      maxNumFaces: 1,
+      minDetectionConfidence: 0.5,
+      minTrackingConfidence: 0.5,
     });
 
-    // Access the webcam video feed
-    navigator.mediaDevices.getUserMedia({ video: true })
-      .then(stream => {
-        video.srcObject = stream;
-        video.play();
-      })
-      .catch(err => console.error("Error accessing the camera: ", err));
+    faceMesh.onResults(onResults);
 
-    animate();
-  }
+    const camera = new Camera(videoElement, {
+      onFrame: async () => {
+        await faceMesh.send({ image: videoElement });
+      },
+      width: 1280,
+      height: 720,
+    });
+    camera.start();
 
-  // Animation loop
-  function animate() {
-    requestAnimationFrame(animate);
+    const mask = new Image();
+    mask.src = 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTl23W-lXgowx1TYak9zYj5AN8vOChISWjS9w&usqp=CAU'; // Mask image URL
 
-    // Rotate the model slightly to create a dynamic effect
-    if (model) {
-      model.rotation.y += 0.01;
-    }
+    function onResults(results) {
+      canvasElement.width = videoElement.videoWidth;
+      canvasElement.height = videoElement.videoHeight;
 
-    renderer.render(scene, camera);
-  }
+      // Clear and flip the canvas horizontally
+      canvasCtx.save();
+      canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+      canvasCtx.translate(canvasElement.width, 0);
+      canvasCtx.scale(-1, 1);
 
-  // Start recording the canvas stream
-  function startRecording() {
-    const stream = canvas.captureStream(30); // 30 FPS
-    mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
+      // Draw the video feed
+      canvasCtx.drawImage(videoElement, 0, 0, canvasElement.width, canvasElement.height);
 
-    mediaRecorder.ondataavailable = (event) => {
-      if (event.data.size > 0) {
-        recordedChunks.push(event.data);
+      if (results.multiFaceLandmarks) {
+        for (const landmarks of results.multiFaceLandmarks) {
+          const nose = landmarks[1]; // Nose
+          const leftEye = landmarks[33]; // Left eye
+          const rightEye = landmarks[263]; // Right eye
+
+          // Calculate mask dimensions and position
+          const maskWidth = Math.abs(leftEye.x - rightEye.x) * canvasElement.width * 2;
+          const maskHeight = maskWidth;
+          const maskX = (1 - nose.x) * canvasElement.width - maskWidth / 2;
+          const maskY = nose.y * canvasElement.height - maskHeight / 2;
+
+          // Draw the mask
+          canvasCtx.drawImage(mask, maskX, maskY, maskWidth, maskHeight);
+        }
       }
-    };
 
-    mediaRecorder.onstop = () => {
-      const blob = new Blob(recordedChunks, { type: 'video/webm' });
-      const url = URL.createObjectURL(blob);
-      downloadLink.href = url;
-      downloadLink.style.display = 'block';
-    };
-
-    mediaRecorder.start();
-    isRecording = true;
-    startRecordingButton.disabled = true;
-    stopRecordingButton.disabled = false;
-  }
-
-  // Stop recording
-  function stopRecording() {
-    if (mediaRecorder) {
-      mediaRecorder.stop();
+      // Restore the canvas to its original state
+      canvasCtx.restore();
     }
-    isRecording = false;
-    startRecordingButton.disabled = false;
-    stopRecordingButton.disabled = true;
-  }
-
-  // Event listeners for buttons
-  startRecordingButton.addEventListener('click', startRecording);
-  stopRecordingButton.addEventListener('click', stopRecording);
-
-  // Initialize the scene when the window loads
-  window.onload = init;
-</script>
-
+  </script>
 </body>
 </html>
